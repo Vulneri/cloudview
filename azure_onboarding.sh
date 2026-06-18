@@ -89,7 +89,7 @@ print_header() {
   if [ "$JSON_ONLY" = "false" ]; then
     echo -e "${CYAN}== Vulneri CloudView Azure Setup ==${NC}"
     echo
-    echo -e "This script prepares an Azure read-only integration for Vulneri CloudView."
+    echo -e "This script prepares an Azure read-only integration for Vulneri CloudView v1.0."
     echo
     echo -e "CloudView uses this identity to provide:"
     echo -e "- resource inventory;"

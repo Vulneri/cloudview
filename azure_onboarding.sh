@@ -89,7 +89,7 @@ print_header() {
   if [ "$JSON_ONLY" = "false" ]; then
     echo -e "${CYAN}== Vulneri CloudView Azure Setup ==${NC}"
     echo
-    echo -e "This script prepares an Azure read-only integration for Vulneri CloudView v1.0."
+    echo -e "This script prepares an Azure read-only integration for Vulneri CloudView v1.1."
     echo
     echo -e "CloudView uses this identity to provide:"
     echo -e "- resource inventory;"
@@ -252,73 +252,7 @@ load_azure_context() {
   fi
 }
 
-# Show detailed permissions checklist, safety boundaries, and prompt confirmation
-confirm_execution() {
-  if [ "$NON_INTERACTIVE" = "true" ]; then
-    return 0
-  fi
 
-  # Determine target file descriptor for prints (stderr when json-only is set)
-  local fd=1
-  if [ "$JSON_ONLY" = "true" ]; then
-    fd=2
-  fi
-
-  {
-    echo
-    echo -e "${BOLD}Permissions to be configured:${NC}"
-    
-    if [ "$MINIMAL" = "true" ]; then
-      echo -e "- Reader: required"
-      echo -e "- Security Reader: skipped (minimal mode)"
-      echo -e "- Cost Management Reader: skipped (minimal mode)"
-      echo -e "- Monitoring Reader: skipped (minimal mode)"
-      echo -e "- Key Vault Reader: skipped (minimal mode)"
-      echo -e "- Microsoft Graph permissions: skipped (minimal mode)"
-      echo
-      echo -e "${AMBER}${BOLD}WARNING:${NC} Minimal mode reduces coverage for Defender for Cloud, Cost/FinOps, Azure Monitor, and parts of CSPM/Inventory."
-    else
-      echo -e "- Reader: required"
-      echo -e "- Security Reader: standard"
-      echo -e "- Cost Management Reader: standard"
-      echo -e "- Monitoring Reader: standard"
-      
-      if [ "$ENABLE_KEYVAULT" = "true" ]; then
-        echo -e "- Key Vault Reader: enabled"
-      else
-        echo -e "- Key Vault Reader: skipped (run with --enable-keyvault-metadata to enable)"
-      fi
-      
-      if [ "$ENABLE_ENTRA" = "true" ]; then
-        echo -e "- Microsoft Graph permissions: enabled"
-        echo -e "  (Requires directory administrator consent to read Entra ID, MFA, CA, and Identity Protection)"
-      else
-        echo -e "- Microsoft Graph permissions: skipped (run with --enable-entra to enable)"
-      fi
-    fi
-
-    echo
-    echo -e "${BOLD}Safety notes:${NC}"
-    echo -e "- No virtual machines will be created."
-    echo -e "- No networks will be changed."
-    echo -e "- No databases will be accessed."
-    echo -e "- No storage file contents will be read."
-    echo -e "- No resources will be deleted."
-    echo -e "- No storage account keys will be listed or accessed."
-    echo -e "- No data will be sent to Vulneri during this onboarding step."
-    echo -e "- A client secret will be generated and shown once at the end."
-    echo
-  } >&${fd}
-
-  echo -n "Do you want to continue and create/update the CloudView integration identity? [y/N]: " >&${fd}
-  local confirm
-  read_input confirm
-  
-  if [[ ! "$confirm" =~ ^[Yy]([Ee][Ss])?$ ]]; then
-    log_error "Setup cancelled by user."
-    exit 3
-  fi
-}
 
 # Check if application exists under displayName and safely reuse or create a unique timestamp-suffixed fallback
 find_or_create_app_registration() {
@@ -586,167 +520,28 @@ assign_required_roles() {
 
 # Print the final credential JSON block and a hidden secret audit JSON block
 print_final_json() {
-  # Build warnings array
-  local warnings_json="[]"
-  if [ ${#WARNINGS_LIST[@]} -gt 0 ]; then
-    warnings_json=$(printf '%s\n' "${WARNINGS_LIST[@]}" | jq -R . | jq -s .)
-  fi
-
-  # Build roles array
-  local roles_json
-  roles_json=$(jq -n \
-    --arg reader_status "$READER_STATUS" \
-    --arg security_status "$SECURITY_STATUS" \
-    --arg cost_status "$COST_STATUS" \
-    --arg monitor_status "$MONITOR_STATUS" \
-    --arg keyvault_status "$KEYVAULT_STATUS" \
-    --arg scope "/subscriptions/$SUBSCRIPTION_ID" \
-    '[
-      {name: "Reader", scope: $scope, status: $reader_status},
-      {name: "Security Reader", scope: $scope, status: $security_status},
-      {name: "Cost Management Reader", scope: $scope, status: $cost_status},
-      {name: "Monitoring Reader", scope: $scope, status: $monitor_status},
-      {name: "Key Vault Reader", scope: $scope, status: $keyvault_status}
-    ]')
-
-  # Fetch Graph Definitions for checking role existence
-  local graph_sp_json
-  graph_sp_json=$(az ad sp show --id "00000003-0000-0000-c000-000000000000" -o json 2>/dev/null || echo "")
-
-  # Resolve Graph API permissions statuses
-  local graph_status_list="[]"
-  for perm in "${GRAPH_PERMS[@]}"; do
-    local status="skipped"
-    if [ "$ENABLE_ENTRA" = "true" ] && [ "$MINIMAL" = "false" ]; then
-      local role_id=""
-      if [ -n "$graph_sp_json" ]; then
-        role_id=$(echo "$graph_sp_json" | jq -r --arg val "$perm" '.appRoles[] | select(.value==$val) | .id' 2>/dev/null || echo "")
-      fi
-      
-      if [ -z "$role_id" ] || [ "$role_id" = "null" ]; then
-        status="role_not_found"
-      elif [ "$GRAPH_CONSENT_STATUS" = "granted" ]; then
-        status="granted"
-      elif [ "$GRAPH_CONSENT_STATUS" = "pending_admin_consent" ]; then
-        status="pending_admin_consent"
-      elif [ "$GRAPH_CONSENT_STATUS" = "failed" ]; then
-        status="failed"
-      else
-        status="configured"
-      fi
-    fi
-    graph_status_list=$(echo "$graph_status_list" | jq --arg name "$perm" --arg stat "$status" '. += [{"name": $name, "status": $stat}]')
-  done
-
-  # Determine coverage mapping
-  local inv_cov="full"
-  local cspm_cov="full"
-  local entra_cov="not_enabled"
-  
-  if [ "$MINIMAL" = "true" ]; then
-    inv_cov="partial"
-    cspm_cov="partial"
-  fi
-  if [ "$COST_STATUS" = "failed" ] || [ "$SECURITY_STATUS" = "failed" ] || [ "$MONITOR_STATUS" = "failed" ]; then
-    inv_cov="partial"
-  fi
-  if [ "$SECURITY_STATUS" = "failed" ] || [ "$MONITOR_STATUS" = "failed" ]; then
-    cspm_cov="partial"
-  fi
-  if [ "$ENABLE_ENTRA" = "true" ] && [ "$MINIMAL" = "false" ]; then
-    if [ "$GRAPH_CONSENT_STATUS" = "granted" ]; then
-      entra_cov="enabled"
-    elif [ "$GRAPH_CONSENT_STATUS" = "pending_admin_consent" ]; then
-      entra_cov="pending_admin_consent"
-    elif [ "$GRAPH_CONSENT_STATUS" = "failed" ]; then
-      entra_cov="failed"
-    fi
-  fi
-
-  local coverage_json
-  coverage_json=$(jq -n \
-    --arg inv "$inv_cov" \
-    --arg cspm "$cspm_cov" \
-    --arg entra "$entra_cov" \
-    '{azureInventory: $inv, cspmAzure: $cspm, entraIdentity: $entra}')
-
-  local mode_val="default"
-  if [ "$MINIMAL" = "true" ]; then
-    mode_val="minimal"
-  fi
-
-  # Construct final full configuration JSON block
-  local final_json
-  final_json=$(jq -n \
-    --arg tenantId "$TENANT_ID" \
-    --arg subscriptionId "$SUBSCRIPTION_ID" \
-    --arg subscriptionName "$SUB_NAME" \
-    --arg clientId "$CLIENT_ID" \
-    --arg clientSecret "$CLIENT_SECRET" \
-    --arg displayName "$DISPLAY_NAME" \
-    --arg mode "$mode_val" \
-    --argjson azureRoles "$roles_json" \
-    --argjson graphPermissions "$graph_status_list" \
-    --arg consent "$GRAPH_CONSENT_STATUS" \
-    --argjson coverage "$coverage_json" \
-    --argjson warnings "$warnings_json" \
-    '{tenantId: $tenantId, subscriptionId: $subscriptionId, subscriptionName: $subscriptionName, clientId: $clientId, clientSecret: $clientSecret, displayName: $displayName, integrationType: "cloudview", cloudProvider: "azure", mode: $mode, azureRoles: $azureRoles, graphPermissions: $graphPermissions, graphConsentStatus: $consent, coverage: $coverage, warnings: $warnings}')
-
-  # Build rolesAssigned list for redacted JSON
-  local roles_assigned="[\"Reader\""
-  if [ "$MINIMAL" = "false" ]; then
-    if [ "$SECURITY_STATUS" != "failed" ] && [ "$SECURITY_STATUS" != "skipped" ]; then
-      roles_assigned="${roles_assigned}, \"Security Reader\""
-    fi
-    if [ "$COST_STATUS" != "failed" ] && [ "$COST_STATUS" != "skipped" ]; then
-      roles_assigned="${roles_assigned}, \"Cost Management Reader\""
-    fi
-    if [ "$MONITOR_STATUS" != "failed" ] && [ "$MONITOR_STATUS" != "skipped" ]; then
-      roles_assigned="${roles_assigned}, \"Monitoring Reader\""
-    fi
-    if [ "$ENABLE_KEYVAULT" = "true" ] && [ "$KEYVAULT_STATUS" != "failed" ]; then
-      roles_assigned="${roles_assigned}, \"Key Vault Reader\""
-    fi
-  fi
-  roles_assigned="${roles_assigned}]"
-
-  # Construct redacted configuration JSON block
-  local redacted_json
-  redacted_json=$(jq -n \
-    --arg tenantId "$TENANT_ID" \
-    --arg subscriptionId "$SUBSCRIPTION_ID" \
-    --arg subscriptionName "$SUB_NAME" \
-    --arg clientId "$CLIENT_ID" \
-    --arg displayName "$DISPLAY_NAME" \
-    --argjson rolesAssigned "$roles_assigned" \
-    '{tenantId: $tenantId, subscriptionId: $subscriptionId, subscriptionName: $subscriptionName, clientId: $clientId, clientSecret: "***hidden***", displayName: $displayName, rolesAssigned: $rolesAssigned}')
-
   if [ "$JSON_ONLY" = "false" ]; then
     echo >&2
     echo -e "${GREEN}======================================================================" >&2
     echo -e "Setup completed." >&2
     echo >&2
     echo -e "Copy the JSON block below and paste it into the Vulneri CloudView dashboard." >&2
-    echo >&2
-    echo -e "Important:" >&2
-    echo -e "- Store this credential securely." >&2
-    echo -e "- The client secret will not be shown again." >&2
-    echo -e "- You can revoke this integration anytime by removing the App Registration or its role assignments in Azure." >&2
     echo -e "======================================================================${NC}" >&2
-    
-    # Standard JSON Block on stdout
-    echo "$final_json"
-    
+  fi
+
+  # Simple, clean JSON block on stdout
+  cat <<JSON
+{
+  "tenantId": "$TENANT_ID",
+  "subscriptionId": "$SUBSCRIPTION_ID",
+  "clientId": "$CLIENT_ID",
+  "clientSecret": "$CLIENT_SECRET"
+}
+JSON
+
+  if [ "$JSON_ONLY" = "false" ]; then
     echo >&2
-    echo -e "${GREEN}======================================================================" >&2
-    echo -e "Audit Summary (Redacted):" >&2
-    echo -e "======================================================================${NC}" >&2
-    
-    # Redacted JSON Block on stdout
-    echo "$redacted_json"
-  else
-    # Output only raw JSON on stdout
-    echo "$final_json"
+    echo -e "${GREEN}======================================================================${NC}" >&2
   fi
 }
 
@@ -755,7 +550,6 @@ main() {
   print_header
   check_dependencies
   load_azure_context
-  confirm_execution
   find_or_create_app_registration
   ensure_service_principal
   assign_required_roles

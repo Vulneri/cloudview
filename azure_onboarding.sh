@@ -130,6 +130,19 @@ log_error() {
   echo -e "${RED}[ERROR]${NC} $1" >&2
 }
 
+read_input() {
+  local var_name="$1"
+  local val=""
+  if [ -t 0 ]; then
+    read -r val
+  elif [ -c /dev/tty ]; then
+    read -r val </dev/tty
+  else
+    val=""
+  fi
+  eval "$var_name=\"\$val\""
+}
+
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -299,7 +312,7 @@ confirm_execution() {
 
   echo -n "Do you want to continue and create/update the CloudView integration identity? [y/N]: " >&${fd}
   local confirm
-  read -r confirm
+  read_input confirm
   
   if [[ ! "$confirm" =~ ^[Yy]([Ee][Ss])?$ ]]; then
     log_error "Setup cancelled by user."
@@ -338,7 +351,7 @@ find_or_create_app_registration() {
       echo -n "Select an option [1-2]: " >&${fd}
       
       local choice
-      read -r choice
+      read_input choice
       if [ "$choice" = "1" ]; then
         action="create"
       else

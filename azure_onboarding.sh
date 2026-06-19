@@ -89,7 +89,7 @@ print_header() {
   if [ "$JSON_ONLY" = "false" ]; then
     echo -e "${CYAN}== Vulneri CloudView Azure Setup ==${NC}"
     echo
-    echo -e "This script prepares an Azure read-only integration for Vulneri CloudView v1.1."
+    echo -e "This script prepares an Azure read-only integration for Vulneri CloudView."
     echo
     echo -e "CloudView uses this identity to provide:"
     echo -e "- resource inventory;"
@@ -422,7 +422,7 @@ configure_graph_permissions() {
         . + [{"resourceAppId": $target_resource_id, "resourceAccess": $graph_access}]
       else
         .[$idx].resourceAccess = (.[$idx].resourceAccess + $graph_access | unique_by(.id))
-      fi
+      end
     ')
   
   log_info "Updating App Registration required resource access with Microsoft Graph permissions..."

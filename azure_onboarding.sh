@@ -89,7 +89,7 @@ print_header() {
   if [ "$JSON_ONLY" = "false" ]; then
     echo -e "${CYAN}== Vulneri CloudView Azure Setup ==${NC}"
     echo
-    echo -e "This script prepares an Azure read-only integration for Vulneri CloudView v1.3."
+    echo -e "This script prepares an Azure read-only integration for Vulneri CloudView."
     echo
     echo -e "CloudView uses this identity to provide:"
     echo -e "- resource inventory;"
@@ -442,8 +442,19 @@ configure_graph_permissions() {
     GRAPH_CONSENT_STATUS="granted"
   else
     log_warn "Automatic administrator consent failed."
-    log_warn "To consent manually, navigate in Azure Portal to:"
-    log_warn "https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationMenuBlade/CallAnAPI/appId/$CLIENT_ID"
+    log_warn "To consent manually, navigate in Azure Portal to: https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationMenuBlade/CallAnAPI/appId/$CLIENT_ID"
+    if [ "$JSON_ONLY" = "false" ]; then
+      echo >&2
+      echo -e "${AMBER}${BOLD}######################################################################${NC}" >&2
+      echo -e "${AMBER}${BOLD}⚠️  WARNING: MANUAL ADMINISTRATOR CONSENT REQUIRED${NC}" >&2
+      echo -e "${AMBER}${BOLD}######################################################################${NC}" >&2
+      echo -e "Automatic consent failed. You must grant consent manually in Azure Portal:" >&2
+      echo -e "  1. Click or open the link below:" >&2
+      echo -e "     ${BLUE}${BOLD}https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationMenuBlade/CallAnAPI/appId/$CLIENT_ID${NC}" >&2
+      echo -e "  2. Click on the ${GREEN}${BOLD}\"Grant admin consent for <Directory>\"${NC} button." >&2
+      echo -e "${AMBER}${BOLD}######################################################################${NC}" >&2
+      echo >&2
+    fi
     GRAPH_CONSENT_STATUS="pending_admin_consent"
   fi
 }

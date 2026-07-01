@@ -191,13 +191,22 @@ sleep 3
 if az ad app permission admin-consent --id "$CLIENT_ID" &>/dev/null; then
   log "Administrator consent granted successfully."
 else
-  log "Warning: Automatic administrator consent failed."
-  log "Note: Azure resources inventory and security analysis will still work normally."
-  log "However, Entra ID (Active Directory) datasets, MFA, and Conditional Access checks"
-  log "may return 403 (Unauthorized) until manual consent is granted."
-  log "To grant consent manually, please navigate to the following link in the Azure Portal"
-  log "using a Directory Admin account and click 'Grant admin consent for <Directory>':"
-  log "https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationMenuBlade/CallAnAPI/appId/$CLIENT_ID"
+  # Print warning in yellow bold
+  echo -e "\033[1;33m" >&2
+  log "=========================================================================="
+  log "⚠️  WARNING: Automatic administrator consent failed."
+  log "=========================================================================="
+  log "Note: Azure resources inventory and security analysis will work normally."
+  log "However, Entra ID (Active Directory) datasets, MFA, and Conditional Access"
+  log "checks may return 403 (Unauthorized) until manual consent is granted."
+  log ""
+  log "To grant consent manually, please navigate to the following link in the"
+  log "Azure Portal using a Directory Admin account and click"
+  log "'Grant admin consent for <Directory>':"
+  log ""
+  log "👉 https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationMenuBlade/CallAnAPI/appId/$CLIENT_ID"
+  log "=========================================================================="
+  echo -e "\033[0m" >&2
 fi
 
 # 9. Try to assign Reader role at Root Management Group scope.
